@@ -8,7 +8,7 @@
 
     <div id="toast-container"></div>
 
-    <div id="carga-overlay-global" class="cargando-overlay hidden">        <div class="text-center">            <div class="cargando-spinner mx-auto mb-4"></div>            <p class="text-lg font-black text-main mb-6" id="carga-overlay-msg">Procesando...</p>        </div>    </div>
+    <div id="carga-overlay-global" class="cargando-overlay hidden">        <div class="text-center">            <div class="cargando-spinner mx-auto mb-4"></div>            <p class="text-lg font-black text-main mb-6" id="carga-overlay-msg">Sincronizando Tienda...</p>        </div>    </div>
 
     <!-- PANTALLA LOGIN ADMIN -->    <div id="pantalla-login" class="fixed inset-0 bg-base z-[99998] flex flex-col items-center justify-center p-4">        <div class="bg-card border border-borderline rounded-3xl p-8 max-w-sm w-full text-center shadow-[0_20px_50px_rgba(99,28,36,0.15)] fade-in relative overflow-hidden">            <div class="absolute top-0 right-0 w-2 h-full bg-accent"></div>            <div id="login-logo-container" class="w-16 h-16 bg-base rounded-2xl flex items-center justify-center mx-auto mb-4 overflow-hidden shadow-md border border-borderline">                <img id="login-logo-img" src="/icon-192.png" class="w-full h-full object-cover rounded-xl">            </div>            <h2 class="text-2xl font-black text-main mb-1">Catálogo Pro</h2>            <p class="text-[10px] text-muted uppercase mb-6 tracking-widest" id="login-store-name">Panel Administrativo</p>            
             <div id="login-error-msg" class="hidden bg-[#ef4444] text-white text-xs font-bold p-2 rounded mb-4"></div>
@@ -106,66 +106,89 @@
 
         function guardarBD() {            return new Promise((resolve) => {                isUploading = true;                try {                    localStorage.setItem('gesto_smart_multicanal', JSON.stringify(db));                    if(esModoNube && firestoreDb) {                        firestoreDb.collection("lite_erp").doc("tienda_multicanal").set(db)                            .then(() => resolve(true)).catch(e => resolve(false));                    } else { resolve(true); }                } catch (e) { resolve(false); }                finally { setTimeout(() => { isUploading = false; }, 800); }            });        }
 
-        try {            const loc = window.location.href.toLowerCase();            isTiendaWebUrl = loc.includes('modo=tienda');            if (loc.includes('canal=mayorista')) canalActual = 'mayorista';            if (loc.includes('canal=minorista')) canalActual = 'minorista';        } catch (e) { }
+        try {            
+            const loc = window.location.href.toLowerCase();            
+            isTiendaWebUrl = loc.includes('modo=tienda');            
+            if (loc.includes('canal=mayorista')) canalActual = 'mayorista';            
+            if (loc.includes('canal=minorista')) canalActual = 'minorista';        
+        } catch (e) { }
 
         let deferredPrompt = null;        const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
 
         window.addEventListener('beforeinstallprompt', (e) => {            e.preventDefault(); deferredPrompt = e;            if (!isStandalone && isTiendaWebUrl) {                const banner = document.getElementById('pwa-install-banner');                if (banner) mostrarElemento('pwa-install-banner');            }        });
 
+        // ================= ARRANQUE BLINDADO Y SINCRONIZACIÓN NUBE INMEDIATA =================
         document.addEventListener('DOMContentLoaded', () => {
             try {
-                aplicarConfiguracion(); 
-                if (isIOS && !isStandalone && isTiendaWebUrl) {
-                    const banner = document.getElementById('pwa-install-banner');
-                    if (banner) { mostrarElemento('pwa-install-banner'); document.getElementById('btn-pwa-install').onclick = () => abrirModalUI('modal-ios-install'); }
-                }
-
-                iniciarVistas(); 
-
-                const catalogoDiv = document.getElementById('public-catalog');
-                if (catalogoDiv) {
-                    catalogoDiv.addEventListener('scroll', function() {
-                        const btnScroll = document.getElementById('btn-scroll-top');
-                        if(btnScroll) {
-                            if (this.scrollTop > 300) {
-                                btnScroll.classList.remove('opacity-0', 'pointer-events-none');
-                                btnScroll.classList.add('opacity-100', 'pointer-events-auto');
-                            } else {
-                                btnScroll.classList.add('opacity-0', 'pointer-events-none');
-                                btnScroll.classList.remove('opacity-100', 'pointer-events-auto');
-                            }
-                        }
-                    });
-                }
-
-                // SINCRONIZACIÓN NUBE ROBUSTA (PRIORIDAD ABSOLUTA A CLOUD)
-                if(esModoNube && firestoreDb) {
-                    firestoreDb.collection("lite_erp").doc("tienda_multicanal").onSnapshot(doc => {
-                        if(isUploading) return; 
-                        if(doc.exists) { 
+                if (esModoNube && firestoreDb) {
+                    firestoreDb.collection("lite_erp").doc("tienda_multicanal").get().then((doc) => {
+                        if (doc.exists) {
                             const cloudData = doc.data();
-                            if(cloudData && Array.isArray(cloudData.productos)) {
-                                db = cloudData; 
+                            if (cloudData && Array.isArray(cloudData.productos)) {
+                                db = cloudData;
                                 localStorage.setItem('gesto_smart_multicanal', JSON.stringify(db));
                             }
-                            verificarIntegridadDB(); 
-                            aplicarConfiguracion(); 
-                            actualizarUI();
-                            if(document.getElementById('public-catalog').style.display !== 'none') { 
-                                renderCats(); 
-                                renderTiendaWeb(); 
-                            }
-                        } else { guardarBD(); }
+                        }
+                        ejecutarArranqueApp();
+                    }).catch(() => {
+                        ejecutarArranqueApp();
                     });
+                } else {
+                    ejecutarArranqueApp();
                 }
             } catch (error) {
-                const errDiv = document.getElementById('login-error-msg');
-                if (errDiv) {
-                    errDiv.innerText = "Fallo de inicio: " + error.message;
-                    mostrarElemento('login-error-msg', 'block');
-                }
+                ejecutarArranqueApp();
             }
         });
+
+        function ejecutarArranqueApp() {
+            verificarIntegridadDB();
+            aplicarConfiguracion(); 
+
+            if (isIOS && !isStandalone && isTiendaWebUrl) {
+                const banner = document.getElementById('pwa-install-banner');
+                if (banner) { mostrarElemento('pwa-install-banner'); document.getElementById('btn-pwa-install').onclick = () => abrirModalUI('modal-ios-install'); }
+            }
+
+            iniciarVistas(); 
+
+            const catalogoDiv = document.getElementById('public-catalog');
+            if (catalogoDiv) {
+                catalogoDiv.addEventListener('scroll', function() {
+                    const btnScroll = document.getElementById('btn-scroll-top');
+                    if(btnScroll) {
+                        if (this.scrollTop > 300) {
+                            btnScroll.classList.remove('opacity-0', 'pointer-events-none');
+                            btnScroll.classList.add('opacity-100', 'pointer-events-auto');
+                        } else {
+                            btnScroll.classList.add('opacity-0', 'pointer-events-none');
+                            btnScroll.classList.remove('opacity-100', 'pointer-events-auto');
+                        }
+                    }
+                });
+            }
+
+            // Listener en tiempo real para cambios posteriores
+            if(esModoNube && firestoreDb) {
+                firestoreDb.collection("lite_erp").doc("tienda_multicanal").onSnapshot(doc => {
+                    if(isUploading) return; 
+                    if(doc.exists) { 
+                        const cloudData = doc.data();
+                        if(cloudData && Array.isArray(cloudData.productos)) {
+                            db = cloudData; 
+                            localStorage.setItem('gesto_smart_multicanal', JSON.stringify(db));
+                        }
+                        verificarIntegridadDB(); 
+                        aplicarConfiguracion(); 
+                        actualizarUI();
+                        if(document.getElementById('public-catalog').style.display !== 'none') { 
+                            renderCats(); 
+                            renderTiendaWeb(); 
+                        }
+                    }
+                });
+            }
+        }
 
         function iniciarVistas() {            
             ocultarElemento('carga-overlay-global');            
