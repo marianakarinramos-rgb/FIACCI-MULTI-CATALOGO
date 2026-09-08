@@ -4,6 +4,7 @@
         .product-card { background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 16px; overflow: hidden; display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s, border-color 0.2s; }        .product-card:hover { transform: translateY(-4px); box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-color: var(--accent-color); }        .product-image { width: 100%; height: 180px; object-fit: contain; padding: 12px; background-color: #ffffff; border-bottom: 1px solid var(--border-color); }
         .cat-chip { padding: 6px 16px; border-radius: 20px; font-size: 10px; font-weight: 700; border: 1px solid var(--border-color); background: var(--bg-card); color: var(--text-muted); cursor: pointer; transition: 0.2s; white-space: nowrap; text-transform: uppercase; }        .cat-chip.active, .cat-chip:hover { background: var(--accent-color); color: var(--accent-text); border-color: var(--accent-color); }
 
+        /* REGLAS DE IMPRESIÓN PDF PERFECTAS */
         @media print {            body * { visibility: hidden !important; }            #pdf-mayorista-preview, #pdf-mayorista-preview * { visibility: visible !important; }            #pdf-mayorista-preview { display: block !important; position: absolute !important; left: 0 !important; top: 0 !important; width: 100% !important; background: #ffffff !important; z-index: 999999; padding: 10px; }            .pdf-card { break-inside: avoid; page-break-inside: avoid; }            @page { margin: 5mm; size: auto; }        }    </style></head><body class="h-screen w-full">
 
     <div id="toast-container"></div>
@@ -64,7 +65,7 @@
         window.onerror = function(msg, url, line) {
             const errDiv = document.getElementById('login-error-msg');
             if (errDiv) {
-                errDiv.innerText = "Error: " + msg;
+                errDiv.innerText = "Error local: " + msg;
                 errDiv.style.setProperty('display', 'block', 'important');
                 errDiv.classList.remove('hidden');
             }
@@ -81,16 +82,22 @@
         }
 
         const firebaseConfig = {            
-            apiKey: "AIzaSyBzgIYRyMFLL616w_OhOO_dC6bR7df5kCI",            
-            authDomain: "catalogo-sami.firebaseapp.com",            
-            projectId: "catalogo-sami",            
-            storageBucket: "catalogo-sami.firebasestorage.app",            
-            messagingSenderId: "82548197889",            
-            appId: "1:82548197889:web:50330ffc4b55d640ef8e00"        
+            apiKey: "AIzaSyCi057jzz5282PWwqxju_13FymPi6fmuzg",            
+            authDomain: "catalogo-fiacci.firebaseapp.com",            
+            projectId: "catalogo-fiacci",            
+            storageBucket: "catalogo-fiacci.firebasestorage.app",            
+            messagingSenderId: "420031522569",            
+            appId: "1:420031522569:web:c026706a2e5a1b2cfd15d8"        
         };
 
         let firestoreDb = null; let esModoNube = false; let isUploading = false; 
-        try { if (typeof firebase !== 'undefined') { firebase.initializeApp(firebaseConfig); firestoreDb = firebase.firestore(); esModoNube = true; } } catch(err) {}
+        try { 
+            if (typeof firebase !== 'undefined') { 
+                firebase.initializeApp(firebaseConfig); 
+                firestoreDb = firebase.firestore(); 
+                esModoNube = true; 
+            } 
+        } catch(err) {}
 
         let db = { config: {}, productos: [] };
         function verificarIntegridadDB() {            if (!db || typeof db !== 'object' || Array.isArray(db)) db = { config: {}, productos: [] };            if (!db.config || typeof db.config !== 'object') db.config = { nombreEmpresa: 'Catálogo', whatsappTurnos: '', pinAdmin: '1234', bannerBase64: '' };            if (!db.config.pinAdmin) db.config.pinAdmin = '1234';            if (!Array.isArray(db.productos)) db.productos = [];        }
@@ -104,7 +111,34 @@
         const debouncedRenderStock = debounce(() => renderStock(), 200); 
         const debouncedRenderTienda = debounce(() => renderTiendaWeb(), 200);
 
-        function guardarBD() {            return new Promise((resolve) => {                isUploading = true;                try {                    localStorage.setItem('gesto_smart_multicanal', JSON.stringify(db));                    if(esModoNube && firestoreDb) {                        firestoreDb.collection("lite_erp").doc("tienda_multicanal").set(db)                            .then(() => resolve(true)).catch(e => resolve(false));                    } else { resolve(true); }                } catch (e) { resolve(false); }                finally { setTimeout(() => { isUploading = false; }, 800); }            });        }
+        function guardarBD() {            
+            return new Promise((resolve) => {                
+                isUploading = true;                
+                try {                    
+                    localStorage.setItem('gesto_smart_multicanal', JSON.stringify(db));                    
+                    if(esModoNube && firestoreDb) {
+                        const dbLimpiada = JSON.parse(JSON.stringify(db));
+                        firestoreDb.collection("lite_erp").doc("tienda_multicanal").set(dbLimpiada)                            
+                            .then(() => {
+                                isUploading = false;
+                                resolve(true);
+                            }).catch(e => { 
+                                isUploading = false;
+                                if(!isTiendaWebUrl) {
+                                    alert("⛔ FIREBASE RECHAZÓ EL GUARDADO\n\nMotivo técnico: " + e.message + "\n\n👉 Reglas vencidas: andá a Firebase > Firestore > Reglas y poné 'allow read, write: if true;'.\n👉 Límite de peso: achicá o borrá fotos.");
+                                }
+                                resolve(false); 
+                            });                    
+                    } else { 
+                        isUploading = false;
+                        resolve(true); 
+                    }                
+                } catch (e) { 
+                    isUploading = false;
+                    resolve(false); 
+                }                
+            });        
+        }
 
         try {            
             const loc = window.location.href.toLowerCase();            
@@ -117,7 +151,6 @@
 
         window.addEventListener('beforeinstallprompt', (e) => {            e.preventDefault(); deferredPrompt = e;            if (!isStandalone && isTiendaWebUrl) {                const banner = document.getElementById('pwa-install-banner');                if (banner) mostrarElemento('pwa-install-banner');            }        });
 
-        // ================= ARRANQUE BLINDADO Y SINCRONIZACIÓN NUBE INMEDIATA =================
         document.addEventListener('DOMContentLoaded', () => {
             try {
                 if (esModoNube && firestoreDb) {
@@ -130,7 +163,8 @@
                             }
                         }
                         ejecutarArranqueApp();
-                    }).catch(() => {
+                    }).catch((e) => {
+                        console.error("No se pudo leer la nube:", e);
                         ejecutarArranqueApp();
                     });
                 } else {
@@ -168,7 +202,6 @@
                 });
             }
 
-            // Listener en tiempo real para cambios posteriores
             if(esModoNube && firestoreDb) {
                 firestoreDb.collection("lite_erp").doc("tienda_multicanal").onSnapshot(doc => {
                     if(isUploading) return; 
@@ -184,6 +217,14 @@
                         if(document.getElementById('public-catalog').style.display !== 'none') { 
                             renderCats(); 
                             renderTiendaWeb(); 
+                        }
+                    }
+                }, (error) => {
+                    if (!isTiendaWebUrl) {
+                        const errDiv = document.getElementById('login-error-msg');
+                        if (errDiv) {
+                            errDiv.innerText = "Firebase bloqueado: " + error.message;
+                            mostrarElemento('login-error-msg', 'block');
                         }
                     }
                 });
